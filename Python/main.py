@@ -193,12 +193,11 @@ class ElemindHeadband:
         # Closed-loop control parameters
         self.target_phase_rad = 0  # [np.pi/3, 5*np.pi/6, 4*np.pi/3, 11*np.pi/6]  # Target phase value (modify by James Bayes Optimisation)
         self.phase_tolerance = 0.1  # Tolerance around target phase (radians)
-        self.pink_noise_volume = 0.5  # Pink noise volume (0.0 to 1.0)
-        self.pink_noise_fade_in_ms = 100  # Fade in time in milliseconds
-        self.pink_noise_fade_out_ms = 100  # Fade out time in milliseconds
+        self.pink_noise_volume = 1  # Pink noise volume (0.0 to 1.0)
+        self.pink_noise_fade_in_ms = 0  # Fade in time in milliseconds
+        self.pink_noise_fade_out_ms = 0  # Fade out time in milliseconds
         self.pink_noise_active = False  # Track if pink noise is currently playing
         self.phase_trigger_count = 0  # Count how many times phase trigger occurred
-
 
         # controller init
         # ---------- GP-UCB controller state ----------
@@ -280,8 +279,9 @@ class ElemindHeadband:
         self._controller_ready = True
 
         if self.debug_mode:
-            print(f"[Controller] Started, first phase = {self.target_phase_rad[0]:.2f} rad")
-
+            print(
+                f"[Controller] Started, first phase = {self.target_phase_rad[0]:.2f} rad"
+            )
 
     def _controller_iterate(self) -> None:
         """Call once every second after avg_alpha_amp_last_sec is updated."""
@@ -305,8 +305,12 @@ class ElemindHeadband:
         idx = replace_next_value(self._controller_retained, self._last_next_stim)
 
         # Age records by 1 s, insert latest observation
-        self._controller_retained = uniform_time_increase(self._controller_retained, 1.0)
-        self._controller_retained.inputs_samples[idx] = self._last_next_stim.stim_variable
+        self._controller_retained = uniform_time_increase(
+            self._controller_retained, 1.0
+        )
+        self._controller_retained.inputs_samples[idx] = (
+            self._last_next_stim.stim_variable
+        )
         self._controller_retained.output_samples[idx] = measurement
         self._controller_retained.time[idx] = 0.0
 
@@ -327,6 +331,7 @@ class ElemindHeadband:
                 f"[Controller] New phase = {self.target_phase_rad[0]:.2f} rad   "
                 f"β = {self._controller_beta:4.2f}"
             )
+
     # ======================================================================
     # End GP-UCB CONTROLLER
     # ======================================================================
@@ -406,11 +411,11 @@ class ElemindHeadband:
             print("Logging stopped")
 
     def setup_audio(self):
-        """Configure audio output"""
+        """Configure audio output... and setup pink noise for session"""
         print("Configuring audio output...")
 
         # Set master volume
-        self.send_command("audio_set_volume 128")  # 50% master volume
+        self.send_command("audio_set_volume 255")  # 50% master volume
 
         # Example code to test audio briefly
         print("Testing audio output...")
@@ -418,7 +423,19 @@ class ElemindHeadband:
         time.sleep(1)
         self.send_command("audio_stop_test")
         print("Audio test complete.")
-        # End of example code to test audio briefly
+
+        # Setup pink noise for session
+        self.setup_pink_noise()
+
+    def setup_pink_noise(self):
+        """Configure pink noise playback and fade parameters at session start."""
+        # self.send_command('audio_set_volume 255')
+
+        # self.send_command(f"audio_pink_fade_out {self.pink_noise_fade_out_ms}", False)
+        # self.send_command("audio_pink_unmute", False)
+        self.send_command("audio_pink_volume 1.0", False)  # Start muted
+        self.send_command(f"audio_pink_fade_in 0", False)
+        self.send_command("audio_pink_play", False)
 
     def start_streaming(self):
         """Start EEG data streaming"""
@@ -431,7 +448,7 @@ class ElemindHeadband:
         # Enable streaming
         self.send_command("stream eeg 1")
         self.send_command("echt_start")
-        self.send_command("audio_pink_volume 0")
+        # self.send_command("audio_pink_volume 1")
         self.send_command("stream inst_amp_phs 1")
         self.send_command("stream accel 0")
         self.send_command("stream audio 0")
@@ -454,8 +471,7 @@ class ElemindHeadband:
         self.send_command("accel_stop")
 
         # Stop audio
-        self.send_command("audio_pink_volume 1")
-        self.send_command("audio_pink_fade_out 0")
+        self.send_command("audio_pink_volume 0")  # Ensure pink noise is muted
         self.send_command("audio_pink_stop")
         self.send_command("audio_pink_unmute")
         self.send_command("audio_bg_fade_out 0")
@@ -616,7 +632,6 @@ class ElemindHeadband:
                 if self.debug_mode:
                     print(f"1-s avg α-amp: {self.avg_alpha_amp_last_sec:.3e} V")
                 self._controller_iterate()
-                
 
     def _check_phase_trigger(self, phase_rad: float):
         """Check if phase meets target criteria and trigger pink noise accordingly"""
@@ -653,33 +668,24 @@ class ElemindHeadband:
                 print(f"Phase exit: {phase_rad:.3f} rad")
 
     def _start_pink_noise(self):
-        """Start pink noise with specified parameters"""
+        """Set pink noise volume to desired level (start noise)."""
         try:
-            # Set volume and fade parameters using configurable values
             self.send_command(f"audio_pink_volume {self.pink_noise_volume}", False)
-            self.send_command(f"audio_pink_fade_in {self.pink_noise_fade_in_ms}", False)
-            self.send_command(
-                f"audio_pink_fade_out {self.pink_noise_fade_out_ms}", False
-            )
-
-            # Start playing
-            self.send_command("audio_pink_play", False)
-            self.send_command("audio_pink_unmute", False)
-
+            self.send_command("audio_pink_play")
             if self.debug_mode:
-                print("Pink noise started")
-
+                print("Pink noise volume set to ON")
         except Exception as e:
             if self.debug_mode:
                 print(f"Error starting pink noise: {e}")
 
     def _stop_pink_noise(self):
-        """Stop pink noise"""
+        """Set pink noise volume to zero (stop noise)."""
         try:
-            self.send_command("audio_pink_stop", False)
-            if self.debug_mode:
-                print("Pink noise stopped")
+            self.send_command("audio_pink_volume 0", False)
+            self.send_command("audio_pink_play")
 
+            if self.debug_mode:
+                print("Pink noise volume set to OFF")
         except Exception as e:
             if self.debug_mode:
                 print(f"Error stopping pink noise: {e}")
@@ -1046,7 +1052,7 @@ def main():
     port = "COM6"  # Windows example
 
     # Create headband interface
-    headband = ElemindHeadband(port, debug=False)
+    headband = ElemindHeadband(port, debug=True)
 
     # Configuration
     headband.enable_real_time_plotting = True  # Set to False for better performance
