@@ -171,8 +171,13 @@ class ElemindHeadband:
         self.inst_amp_buffer = np.zeros(1000)  # Last 4 seconds of amplitude
         self.inst_phase_buffer = np.zeros(1000)  # Last 4 seconds of phase
 
+        # ----- rolling average of alpha-band amplitude -----
+        self.avg_alpha_amp_last_sec = 0.0        # most-recent 1-s mean
+        self.alpha_amp_history = []              # (timestamp, mean) log
+        self._amp_sample_counter = 0             # counts samples since last update
+
         # Closed-loop control parameters
-        self.target_phase_rad = [np.pi/3, 5*np.pi/6, 4*np.pi/3, 11*np.pi/6]  # Target phase value (modify as needed)
+        self.target_phase_rad = 0 #[np.pi/3, 5*np.pi/6, 4*np.pi/3, 11*np.pi/6]  # Target phase value (modify by James Bayes Optimisation)
         self.phase_tolerance = 0.1  # Tolerance around target phase (radians)
         self.pink_noise_volume = 0.5  # Pink noise volume (0.0 to 1.0)
         self.pink_noise_fade_in_ms = 100  # Fade in time in milliseconds
@@ -467,6 +472,22 @@ class ElemindHeadband:
             self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
             self.inst_phase_buffer[-1] = phase_rad % (2 * np.pi)  # Ensure 0-2pi
 
+            # ----- maintain one-second average -----
+            self._amp_sample_counter += 1
+
+            if self._amp_sample_counter >= self.fs:            # 250 samples ≈ 1 s
+                last_sec_amp = self.inst_amp_buffer[-self.fs:]  # most-recent second
+                self.avg_alpha_amp_last_sec = float(np.mean(np.abs(last_sec_amp)))
+
+                # save to history for later inspection
+                self.alpha_amp_history.append((timestamp, self.avg_alpha_amp_last_sec))
+
+                # reset for the next second
+                self._amp_sample_counter = 0
+
+                if self.debug_mode:
+                    print(f"1-s avg α-amp: {self.avg_alpha_amp_last_sec:.3e} V")
+
     def _check_phase_trigger(self, phase_rad: float):
         """Check if phase meets target criteria and trigger pink noise accordingly"""
         # Use configurable parameters from __init__
@@ -597,6 +618,8 @@ class ElemindHeadband:
                 ax_phase.set_ylim([0, 2 * np.pi])
                 ax_phase.grid(True)
                 (line_phase,) = ax_phase.plot(x_samples, np.zeros(1000), color="orange")
+                (line_avg_amp,) = ax_phase.plot(x_samples, np.zeros(1000), linestyle="--", linewidth=1)
+                ax_phase.legend(["Phase (rad)", "Avg α-amp (rescaled)"])
 
                 plt.tight_layout()
                 plt.show(block=False)
