@@ -171,7 +171,7 @@ class ElemindHeadband:
         self.inst_phase_buffer = np.zeros(1000)  # Last 4 seconds of phase
 
         # Closed-loop control parameters
-        self.target_phase_rad = [np.pi/3, 5*np.pi/6, 4*np.pi/3, 11*np.pi/6]  # Target phase value (modify as needed)
+        self.target_phase_rad = 0 #[np.pi/3, 5*np.pi/6, 4*np.pi/3, 11*np.pi/6]  # Target phase value (modify by James Bayes Optimisation)
         self.phase_tolerance = 0.1  # Tolerance around target phase (radians)
         self.pink_noise_volume = 0.5  # Pink noise volume (0.0 to 1.0)
         self.pink_noise_fade_in_ms = 100  # Fade in time in milliseconds
