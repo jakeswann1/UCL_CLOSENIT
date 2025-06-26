@@ -751,7 +751,7 @@ class ElemindHeadband:
                 ax_amp.set_title("Instantaneous Amplitude")
                 ax_amp.set_ylabel("Amplitude (V)")
                 ax_amp.grid(True)
-                (line_amp,) =ax_amp.plot(
+                (line_amp,) = ax_amp.plot(
                     x_samples,
                     np.zeros(1000),
                     color="purple",
@@ -948,15 +948,16 @@ class ElemindHeadband:
 
         # Perform alpha power analysis
         # eeg_array: shape (N, 4) [timestamp, ch1, ch2, ch3]
-        perc90, mean, std, stim_z = analyze_alpha_power(
+        perc90, mean, std, stim_z, mean_z = analyze_alpha_power(
             eeg_array,
             fs=250,
-            baseline_time=self.baseline_time,  # or your actual baseline duration
-            stimulation_time=self.stimulation_time,  # or your actual stimulation duration
+            baseline_time=self.baseline_time,
+            stimulation_time=self.stimulation_time,
             baseline_exclude=30,
         )
         print("90th percentile z-scored alpha power (channels Fp1, Fpz, Fp2):", perc90)
         print("Highest value:", np.max(perc90))
+        print("Mean z-scored alpha power (channels Fp1, Fpz, Fp2):", mean_z)
 
         print("Analysis complete!")
 
