@@ -148,7 +148,7 @@ class ElemindHeadband:
         self.sample_count = 0  # j in MATLAB
 
         # Control flags
-        self.enable_real_time_plotting = True
+        self.enable_real_time_plotting = False
 
         # Setup filters
         self._setup_filters()
@@ -193,7 +193,7 @@ class ElemindHeadband:
         # Closed-loop control parameters
         self.target_phase_rad = 0  # [np.pi/3, 5*np.pi/6, 4*np.pi/3, 11*np.pi/6]  # Target phase value (modify by James Bayes Optimisation)
         self.phase_tolerance = 0.1  # Tolerance around target phase (radians)
-        self.pink_noise_volume = 1  # Pink noise volume (0.0 to 1.0)
+        self.pink_noise_volume = 1.0  # Pink noise volume (0.0 to 1.0)
         self.pink_noise_fade_in_ms = 0  # Fade in time in milliseconds
         self.pink_noise_fade_out_ms = 0  # Fade out time in milliseconds
         self.pink_noise_active = False  # Track if pink noise is currently playing
@@ -327,6 +327,7 @@ class ElemindHeadband:
         self.target_phase_rad = [float(self._last_next_stim.stim_variable[0])]
 
         if self.debug_mode:
+            print(f"Target phase: {self.target_phase_rad}")
             print(
                 f"[Controller] New phase = {self.target_phase_rad[0]:.2f} rad   "
                 f"β = {self._controller_beta:4.2f}"
@@ -634,13 +635,13 @@ class ElemindHeadband:
                 if self.debug_mode:
                     print(f"1-s avg α-amp: {self.avg_alpha_amp_last_sec:.3e} V")
                 # Only iterate controller after baseline
-                if self.sample_count >= 60 * self.fs:
+                if self.sample_count >= self.baseline_time * self.fs:
                     self._controller_iterate()
 
     def _check_phase_trigger(self, phase_rad: float):
         """Check if phase meets target criteria and trigger pink noise accordingly"""
         # Block pink noise during baseline
-        if self.sample_count < 60 * self.fs:
+        if self.sample_count < self.baseline_time * self.fs:
             return
         # Use configurable parameters from __init__
         target_phase = self.target_phase_rad
@@ -1041,8 +1042,8 @@ def main():
     subject_num = 0  # CHANGE TO YOUR SUBJECT NUMBER
 
     # Recording parameters
-    eeg_baseline = 60  # Baseline before stimulation starts
-    stimulation_time = 2 * 60  # Time for which stimulation is active
+    eeg_baseline = 1  # Baseline before stimulation starts
+    stimulation_time = 2 * 20  # Time for which stimulation is active
     sampling_duration_secs = stimulation_time + eeg_baseline  # total recording time
 
     # List available ports
@@ -1080,7 +1081,7 @@ def main():
         11 * np.pi / 6,
     ]  # Target phase: π radians (180 degrees)
     headband.phase_tolerance = 0.1  # Tolerance: ±0.1 radians (±5.7 degrees)
-    headband.pink_noise_volume = 1  # Pink noise volume: 40%
+    headband.pink_noise_volume = 0.99  # Pink noise volume: 40%
     headband.pink_noise_fade_in_ms = 0  # Fade in: 200ms
     headband.pink_noise_fade_out_ms = 0  # Fade out: 200ms
 
