@@ -662,7 +662,7 @@ class ElemindHeadband:
 
         # Check if phase is within target range
         phase_diff = np.abs(phase_rad - np.array(target_phase))
-        phase_diff = np.where(phase_diff > np.pi, 2 * np.pi - phase_diff, phase_diff)
+        # phase_diff = np.where(phase_diff > np.pi, 2 * np.pi - phase_diff, phase_diff)
         in_target_range = np.any(phase_diff <= phase_tolerance)
 
         # Trigger logic
@@ -687,6 +687,7 @@ class ElemindHeadband:
             self.pink_noise_active = False
             if self.debug_mode:
                 print(f"Phase exit: {phase_rad:.3f} rad")
+    
 
     def _start_pink_noise(self):
         """Set pink noise volume to desired level (start noise)."""
@@ -1055,7 +1056,7 @@ def main():
     subject_num = 0  # CHANGE TO YOUR SUBJECT NUMBER
 
     # Recording parameters
-    eeg_baseline = 60  # Baseline before stimulation starts
+    eeg_baseline = 1  # Baseline before stimulation starts
     stimulation_time = 2 * 60  # Time for which stimulation is active
     sampling_duration_secs = stimulation_time + eeg_baseline  # total recording time
 
