@@ -848,9 +848,9 @@ def main():
     subject_num = 0  # CHANGE TO YOUR SUBJECT NUMBER
 
     # Recording parameters
-    eeg_basline = 60  # Baseline before stimulation starts
+    eeg_baseline = 60  # Baseline before stimulation starts
     stimulation_time = 2 * 60  # Time for which stimulation is active
-    sampling_duration_secs = stimulation_time + eeg_basline  # total recording time
+    sampling_duration_secs = stimulation_time + eeg_baseline  # total recording time
 
     # List available ports
     ports = serial.tools.list_ports.comports()
@@ -875,8 +875,8 @@ def main():
     # Set timing parameters
     headband.stimulation_time = stimulation_time
     headband.sampling_duration_secs = sampling_duration_secs
-    headband.baseline_time = eeg_basline
-    headband.time_start = eeg_basline
+    headband.baseline_time = eeg_baseline
+    headband.time_start = eeg_baseline
     headband.time_end = sampling_duration_secs
 
     # Configure closed-loop control parameters
