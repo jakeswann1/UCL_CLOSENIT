@@ -16,7 +16,7 @@ import argparse
 from typing import Optional, Dict, Any, Tuple
 from math import degrees, radians
 import serial.tools.list_ports
-from UCL_CLOSENIT.oscilltrack import OscillTrack
+from oscilltrack import OscillTrack
 
 """
 Elemind Headband Python Interface with Closed-Loop Control
@@ -875,7 +875,7 @@ def main():
     # Configure closed-loop control parameters
     headband.target_phase_rad = [np.pi/3, 5*np.pi/6, 4*np.pi/3, 11*np.pi/6]  # Target phase: π radians (180 degrees)
     headband.phase_tolerance = 0.1  # Tolerance: ±0.1 radians (±5.7 degrees)
-    headband.pink_noise_volume = 0.4  # Pink noise volume: 40%
+    headband.pink_noise_volume = 1  # Pink noise volume: 40%
     headband.pink_noise_fade_in_ms = 200  # Fade in: 200ms
     headband.pink_noise_fade_out_ms = 200  # Fade out: 200ms
     
