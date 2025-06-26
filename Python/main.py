@@ -437,6 +437,8 @@ class ElemindHeadband:
         self.send_command(f"audio_pink_fade_in 0", False)
         self.send_command("audio_pink_play", False)
 
+        self._stop_pink_noise()  # Ensure pink noise is stopped initially
+
     def start_streaming(self):
         """Start EEG data streaming"""
         print("Starting EEG streaming...")
@@ -631,10 +633,15 @@ class ElemindHeadband:
 
                 if self.debug_mode:
                     print(f"1-s avg α-amp: {self.avg_alpha_amp_last_sec:.3e} V")
-                self._controller_iterate()
+                # Only iterate controller after baseline
+                if self.sample_count >= 60 * self.fs:
+                    self._controller_iterate()
 
     def _check_phase_trigger(self, phase_rad: float):
         """Check if phase meets target criteria and trigger pink noise accordingly"""
+        # Block pink noise during baseline
+        if self.sample_count < 60 * self.fs:
+            return
         # Use configurable parameters from __init__
         target_phase = self.target_phase_rad
         phase_tolerance = self.phase_tolerance
@@ -744,7 +751,7 @@ class ElemindHeadband:
                 ax_amp.set_title("Instantaneous Amplitude")
                 ax_amp.set_ylabel("Amplitude (V)")
                 ax_amp.grid(True)
-                (line_amp,) = ax_amp.plot(
+                (line_amp,) =ax_amp.plot(
                     x_samples,
                     np.zeros(1000),
                     color="purple",
