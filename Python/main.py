@@ -607,7 +607,12 @@ class ElemindHeadband:
                 ax_amp.set_title("Instantaneous Amplitude")
                 ax_amp.set_ylabel("Amplitude (V)")
                 ax_amp.grid(True)
+                lines_amp = []
                 (line_amp,) = ax_amp.plot(x_samples, np.zeros(1000), color="purple")
+                lines_amp.append(line_amp)
+                (line_avg_amp,) = ax_phase.plot(x_samples, np.zeros(1000), linestyle="--", linewidth=1)
+                lines_amp.append(line_avg_amp)
+                ax_phase.legend(["α-amp", "Avg α-amp (rescaled)"])
 
                 # Phase subplot
                 ax_phase = axs[2]
@@ -617,8 +622,6 @@ class ElemindHeadband:
                 ax_phase.set_ylim([0, 2 * np.pi])
                 ax_phase.grid(True)
                 (line_phase,) = ax_phase.plot(x_samples, np.zeros(1000), color="orange")
-                (line_avg_amp,) = ax_phase.plot(x_samples, np.zeros(1000), linestyle="--", linewidth=1)
-                ax_phase.legend(["Phase (rad)", "Avg α-amp (rescaled)"])
 
                 plt.tight_layout()
                 plt.show(block=False)
@@ -663,8 +666,11 @@ class ElemindHeadband:
                             lines_eeg[i].set_xdata(time_ax)
 
                         # Amplitude
-                        line_amp.set_ydata(self.inst_amp_buffer)
-                        line_amp.set_xdata(time_ax)
+                        lines_amp[0].set_ydata(self.inst_amp_buffer)
+                        lines_amp[0].set_xdata(time_ax)
+                        lines_amp[1].set_ydata(self.avg_alpha_amp_last_sec)
+                        lines_amp[1].set_xdata(time_ax)
+
 
                         # Phase
                         line_phase.set_ydata(self.inst_phase_buffer)
