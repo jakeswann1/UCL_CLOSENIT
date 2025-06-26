@@ -455,10 +455,10 @@ class ElemindHeadband:
             self._check_phase_trigger(phase_rad)
 
             # Update live buffers
-            # self.inst_amp_buffer[:-1] = self.inst_amp_buffer[1:]
-            # self.inst_amp_buffer[-1] = amp_volts
-            # self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
-            # self.inst_phase_buffer[-1] = phase_rad % (2 * np.pi)  # Ensure 0-2pi
+            self.inst_amp_buffer[:-1] = self.inst_amp_buffer[1:]
+            self.inst_amp_buffer[-1] = amp_volts
+            self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
+            self.inst_phase_buffer[-1] = phase_rad % (2 * np.pi)  # Ensure 0-2pi
 
     def _check_phase_trigger(self, phase_rad: float):
         """Check if phase meets target criteria and trigger pink noise accordingly"""
