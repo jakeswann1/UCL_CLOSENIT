@@ -17,6 +17,29 @@ from typing import Optional, Dict, Any, Tuple
 from math import degrees, radians
 import serial.tools.list_ports
 
+"""
+Elemind Headband Python Interface with Closed-Loop Control
+
+This script provides real-time EEG monitoring and closed-loop control using the Elemind headband.
+The closed-loop control system triggers pink noise audio when the instantaneous phase meets
+specific criteria.
+
+CLOSED-LOOP CONTROL FEATURE:
+- Monitors instantaneous phase from EEG data
+- Triggers pink noise when phase enters target range
+- Configurable parameters:
+  * target_phase_rad: Target phase value (default: π radians)
+  * phase_tolerance: Tolerance around target (default: ±0.2 radians)
+  * pink_noise_volume: Audio volume (0.0-1.0, default: 0.5)
+  * pink_noise_fade_in_ms: Fade-in time (default: 100ms)
+  * pink_noise_fade_out_ms: Fade-out time (default: 100ms)
+
+Example usage:
+    headband = ElemindHeadband("COM6", debug=True)
+    headband.target_phase_rad = np.pi/2  # 90 degrees
+    headband.phase_tolerance = 0.1       # ±5.7 degrees
+    headband.pink_noise_volume = 0.3     # 30% volume
+"""
 
 class ElemindFilter2ndOrder:
     """2nd order IIR filter (for high-pass)"""
@@ -148,6 +171,15 @@ class ElemindHeadband:
         # New buffers for amplitude and phase
         self.inst_amp_buffer = np.zeros(1000)  # Last 4 seconds of amplitude
         self.inst_phase_buffer = np.zeros(1000)  # Last 4 seconds of phase
+
+        # Closed-loop control parameters
+        self.target_phase_rad = [np.pi/3, 5*np.pi/6, 4*np.pi/3, 11*np.pi/6]  # Target phase value (modify as needed)
+        self.phase_tolerance = 0.1  # Tolerance around target phase (radians)
+        self.pink_noise_volume = 0.5  # Pink noise volume (0.0 to 1.0)
+        self.pink_noise_fade_in_ms = 100  # Fade in time in milliseconds
+        self.pink_noise_fade_out_ms = 100  # Fade out time in milliseconds
+        self.pink_noise_active = False  # Track if pink noise is currently playing
+        self.phase_trigger_count = 0  # Count how many times phase trigger occurred
 
     def _setup_filters(self):
         """Initialize digital filters"""
@@ -412,13 +444,77 @@ class ElemindHeadband:
 
             self.inst_amp_phs_data.append([timestamp, amp_volts, phase_rad])
 
-            print(phase_rad)
+            # CLOSED LOOP CONTROL: Trigger pink noise based on phase
+            self._check_phase_trigger(phase_rad)
 
             # Update live buffers
             self.inst_amp_buffer[:-1] = self.inst_amp_buffer[1:]
             self.inst_amp_buffer[-1] = amp_volts
             self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
             self.inst_phase_buffer[-1] = phase_rad % (2 * np.pi)  # Ensure 0-2pi
+
+    def _check_phase_trigger(self, phase_rad: float):
+        """Check if phase meets target criteria and trigger pink noise accordingly"""
+        # Use configurable parameters from __init__
+        target_phase = self.target_phase_rad
+        phase_tolerance = self.phase_tolerance
+        
+        # Check if phase is within target range
+        phase_diff = abs(phase_rad - target_phase)
+        if phase_diff > np.pi:  # Handle phase wrapping
+            phase_diff = 2 * np.pi - phase_diff
+            
+        in_target_range = phase_diff <= phase_tolerance
+        
+        # Trigger logic
+        if in_target_range and not hasattr(self, 'pink_noise_active'):
+            # Initialize pink noise state if not already done
+            self.pink_noise_active = False
+            
+        if in_target_range and not self.pink_noise_active:
+            # Start pink noise
+            self._start_pink_noise()
+            self.pink_noise_active = True
+            self.phase_trigger_count += 1
+            if self.debug_mode:
+                print(f"Phase trigger #{self.phase_trigger_count}: {phase_rad:.3f} rad (target: {target_phase:.3f} ± {phase_tolerance:.3f})")
+                
+        elif not in_target_range and self.pink_noise_active:
+            # Stop pink noise
+            self._stop_pink_noise()
+            self.pink_noise_active = False
+            if self.debug_mode:
+                print(f"Phase exit: {phase_rad:.3f} rad")
+
+    def _start_pink_noise(self):
+        """Start pink noise with specified parameters"""
+        try:
+            # Set volume and fade parameters using configurable values
+            self.send_command(f"audio_pink_volume {self.pink_noise_volume}", False)
+            self.send_command(f"audio_pink_fade_in {self.pink_noise_fade_in_ms}", False)
+            self.send_command(f"audio_pink_fade_out {self.pink_noise_fade_out_ms}", False)
+            
+            # Start playing
+            self.send_command("audio_pink_play", False)
+            self.send_command("audio_pink_unmute", False)
+            
+            if self.debug_mode:
+                print("Pink noise started")
+                
+        except Exception as e:
+            if self.debug_mode:
+                print(f"Error starting pink noise: {e}")
+
+    def _stop_pink_noise(self):
+        """Stop pink noise"""
+        try:
+            self.send_command("audio_pink_stop", False)
+            if self.debug_mode:
+                print("Pink noise stopped")
+                
+        except Exception as e:
+            if self.debug_mode:
+                print(f"Error stopping pink noise: {e}")
 
     def _update_plotting_buffers(self, eeg_filtered: np.ndarray):
         # Always update buffers
@@ -766,6 +862,19 @@ def main():
     headband.baseline_time = eeg_basline
     headband.time_start = eeg_basline
     headband.time_end = sampling_duration_secs
+
+    # Configure closed-loop control parameters
+    headband.target_phase_rad = [np.pi/3, 5*np.pi/6, 4*np.pi/3, 11*np.pi/6]  # Target phase: π radians (180 degrees)
+    headband.phase_tolerance = 0.1  # Tolerance: ±0.1 radians (±5.7 degrees)
+    headband.pink_noise_volume = 0.4  # Pink noise volume: 40%
+    headband.pink_noise_fade_in_ms = 200  # Fade in: 200ms
+    headband.pink_noise_fade_out_ms = 200  # Fade out: 200ms
+    
+    print(f"Closed-loop control configured:")
+    print(f"  Target phase: {headband.target_phase_rad:.2f} rad ({np.degrees(headband.target_phase_rad):.1f}°)")
+    print(f"  Tolerance: ±{headband.phase_tolerance:.2f} rad (±{np.degrees(headband.phase_tolerance):.1f}°)")
+    print(f"  Pink noise volume: {headband.pink_noise_volume*100:.0f}%")
+    print(f"  Fade in/out: {headband.pink_noise_fade_in_ms}ms")
 
     # Connect to headband
     if not headband.connect():
