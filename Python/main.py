@@ -272,8 +272,14 @@ class ElemindHeadband:
         """Start EEG data streaming"""
         print("Starting EEG streaming...")
 
+        # Set filter centre frequency for phase computation
+        # self.send_command("therapy_enable_alpha_track 0")
+        # self.send_command("echt_config_simple 10")
+
         # Enable streaming
         self.send_command("stream eeg 1")
+        self.send_command("echt_start")
+        self.send_command("audio_pink_volume 0")
         self.send_command("stream inst_amp_phs 1")
         self.send_command("stream accel 0")
         self.send_command("stream audio 0")
@@ -340,6 +346,8 @@ class ElemindHeadband:
         rtos_timestamp = int(match.group(1))
         data_type = match.group(2)
         values_str = match.group(3)
+
+        print(data)
 
         try:
             values = [float(x) for x in values_str.split()]
