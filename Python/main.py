@@ -383,8 +383,6 @@ class ElemindHeadband:
         data_type = match.group(2)
         values_str = match.group(3)
 
-        print(data)
-
         try:
             values = [float(x) for x in values_str.split()]
             if not values:
