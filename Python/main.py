@@ -617,6 +617,8 @@ class ElemindHeadband:
                 ax_phase.set_ylim([0, 2 * np.pi])
                 ax_phase.grid(True)
                 (line_phase,) = ax_phase.plot(x_samples, np.zeros(1000), color="orange")
+                (line_avg_amp,) = ax_phase.plot(x_samples, np.zeros(1000), linestyle="--", linewidth=1)
+                ax_phase.legend(["Phase (rad)", "Avg α-amp (rescaled)"])
 
                 plt.tight_layout()
                 plt.show(block=False)
