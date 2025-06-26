@@ -16,6 +16,7 @@ import argparse
 from typing import Optional, Dict, Any, Tuple
 from math import degrees, radians
 import serial.tools.list_ports
+from UCL_CLOSENIT.oscilltrack import OscillTrack
 
 
 class ElemindFilter2ndOrder:
@@ -148,6 +149,9 @@ class ElemindHeadband:
         # New buffers for amplitude and phase
         self.inst_amp_buffer = np.zeros(1000)  # Last 4 seconds of amplitude
         self.inst_phase_buffer = np.zeros(1000)  # Last 4 seconds of phase
+
+
+        self.tracker = OscillTrack(fc_hz=30.0, fs_hz=250, g=2 ** -4)
 
     def _setup_filters(self):
         """Initialize digital filters"""
@@ -361,6 +365,7 @@ class ElemindHeadband:
             if self.debug_mode:
                 print(f"Error processing data: {e}")
 
+
     def _process_eeg_sample(self, timestamp: float, eeg_raw: np.ndarray):
         if len(eeg_raw) != 3:
             return
@@ -394,6 +399,14 @@ class ElemindHeadband:
             self._update_plotting_buffers(eeg_filtered)
 
         # START YOUR CLOSED LOOP CONTROL HERE TODO: add
+        
+        self.tracker
+        phase_est, amp_est = self.tracker.step(sample)
+        self.inst_amp_buffer[:-1]   = self.inst_amp_buffer[1:]
+        self.inst_amp_buffer[-1]    = amp_est
+        self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
+        self.inst_phase_buffer[-1]  = phase_est % (2*np.pi)  # keep 0‒2π
+
 
         # END YOUR CLOSED LOOP CONTROL HERE
 
@@ -415,10 +428,10 @@ class ElemindHeadband:
             print(phase_rad)
 
             # Update live buffers
-            self.inst_amp_buffer[:-1] = self.inst_amp_buffer[1:]
-            self.inst_amp_buffer[-1] = amp_volts
-            self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
-            self.inst_phase_buffer[-1] = phase_rad % (2 * np.pi)  # Ensure 0-2pi
+            # self.inst_amp_buffer[:-1] = self.inst_amp_buffer[1:]
+            # self.inst_amp_buffer[-1] = amp_volts
+            # self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
+            # self.inst_phase_buffer[-1] = phase_rad % (2 * np.pi)  # Ensure 0-2pi
 
     def _update_plotting_buffers(self, eeg_filtered: np.ndarray):
         # Always update buffers
