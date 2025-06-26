@@ -170,6 +170,11 @@ class ElemindHeadband:
         self.inst_amp_buffer = np.zeros(1000)  # Last 4 seconds of amplitude
         self.inst_phase_buffer = np.zeros(1000)  # Last 4 seconds of phase
 
+        # ----- rolling average of alpha-band amplitude -----
+        self.avg_alpha_amp_last_sec = 0.0        # most-recent 1-s mean
+        self.alpha_amp_history = []              # (timestamp, mean) log
+        self._amp_sample_counter = 0             # counts samples since last update
+
         # Closed-loop control parameters
         self.target_phase_rad = 0 #[np.pi/3, 5*np.pi/6, 4*np.pi/3, 11*np.pi/6]  # Target phase value (modify by James Bayes Optimisation)
         self.phase_tolerance = 0.1  # Tolerance around target phase (radians)
@@ -465,6 +470,22 @@ class ElemindHeadband:
             self.inst_amp_buffer[-1] = amp_volts
             self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
             self.inst_phase_buffer[-1] = phase_rad % (2 * np.pi)  # Ensure 0-2pi
+
+            # ----- maintain one-second average -----
+            self._amp_sample_counter += 1
+
+            if self._amp_sample_counter >= self.fs:            # 250 samples ≈ 1 s
+                last_sec_amp = self.inst_amp_buffer[-self.fs:]  # most-recent second
+                self.avg_alpha_amp_last_sec = float(np.mean(np.abs(last_sec_amp)))
+
+                # save to history for later inspection
+                self.alpha_amp_history.append((timestamp, self.avg_alpha_amp_last_sec))
+
+                # reset for the next second
+                self._amp_sample_counter = 0
+
+                if self.debug_mode:
+                    print(f"1-s avg α-amp: {self.avg_alpha_amp_last_sec:.3e} V")
 
     def _check_phase_trigger(self, phase_rad: float):
         """Check if phase meets target criteria and trigger pink noise accordingly"""
