@@ -13,6 +13,7 @@ import re
 from collections import defaultdict
 from math import degrees
 import serial.tools.list_ports
+from post_hoc_analysis import analyze_alpha_power
 
 """
 Elemind Headband Python Interface with Closed-Loop Control
@@ -169,6 +170,11 @@ class ElemindHeadband:
         # New buffers for amplitude and phase
         self.inst_amp_buffer = np.zeros(1000)  # Last 4 seconds of amplitude
         self.inst_phase_buffer = np.zeros(1000)  # Last 4 seconds of phase
+
+        # ----- rolling average of alpha-band amplitude -----
+        self.avg_alpha_amp_last_sec = 0.0        # most-recent 1-s mean
+        self.alpha_amp_history = []              # (timestamp, mean) log
+        self._amp_sample_counter = 0             # counts samples since last update
 
         # Closed-loop control parameters
         self.target_phase_rad = 0 #[np.pi/3, 5*np.pi/6, 4*np.pi/3, 11*np.pi/6]  # Target phase value (modify by James Bayes Optimisation)
@@ -377,8 +383,6 @@ class ElemindHeadband:
         data_type = match.group(2)
         values_str = match.group(3)
 
-        print(data)
-
         try:
             values = [float(x) for x in values_str.split()]
             if not values:
@@ -465,6 +469,22 @@ class ElemindHeadband:
             self.inst_amp_buffer[-1] = amp_volts
             self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
             self.inst_phase_buffer[-1] = phase_rad % (2 * np.pi)  # Ensure 0-2pi
+
+            # ----- maintain one-second average -----
+            self._amp_sample_counter += 1
+
+            if self._amp_sample_counter >= self.fs:            # 250 samples ≈ 1 s
+                last_sec_amp = self.inst_amp_buffer[-self.fs:]  # most-recent second
+                self.avg_alpha_amp_last_sec = float(np.mean(np.abs(last_sec_amp)))
+
+                # save to history for later inspection
+                self.alpha_amp_history.append((timestamp, self.avg_alpha_amp_last_sec))
+
+                # reset for the next second
+                self._amp_sample_counter = 0
+
+                if self.debug_mode:
+                    print(f"1-s avg α-amp: {self.avg_alpha_amp_last_sec:.3e} V")
 
     def _check_phase_trigger(self, phase_rad: float):
         """Check if phase meets target criteria and trigger pink noise accordingly"""
@@ -586,7 +606,12 @@ class ElemindHeadband:
                 ax_amp.set_title("Instantaneous Amplitude")
                 ax_amp.set_ylabel("Amplitude (V)")
                 ax_amp.grid(True)
+                lines_amp = []
                 (line_amp,) = ax_amp.plot(x_samples, np.zeros(1000), color="purple")
+                lines_amp.append(line_amp)
+                (line_avg_amp,) = ax_phase.plot(x_samples, np.zeros(1000), linestyle="--", linewidth=1)
+                lines_amp.append(line_avg_amp)
+                ax_phase.legend(["α-amp", "Avg α-amp (rescaled)"])
 
                 # Phase subplot
                 ax_phase = axs[2]
@@ -640,8 +665,11 @@ class ElemindHeadband:
                             lines_eeg[i].set_xdata(time_ax)
 
                         # Amplitude
-                        line_amp.set_ydata(self.inst_amp_buffer)
-                        line_amp.set_xdata(time_ax)
+                        lines_amp[0].set_ydata(self.inst_amp_buffer)
+                        lines_amp[0].set_xdata(time_ax)
+                        lines_amp[1].set_ydata(self.avg_alpha_amp_last_sec)
+                        lines_amp[1].set_xdata(time_ax)
+
 
                         # Phase
                         line_phase.set_ydata(self.inst_phase_buffer)
@@ -766,6 +794,18 @@ class ElemindHeadband:
             eeg, t, fs, N, idx_start, idx_end, parsed_data, raw_parsed_data, ts
         )
 
+        # Perform alpha power analysis
+        # eeg_array: shape (N, 4) [timestamp, ch1, ch2, ch3]
+        perc90, mean, std, stim_z = analyze_alpha_power(
+            eeg_array,
+            fs=250,
+            baseline_time=self.baseline_time,  # or your actual baseline duration
+            stimulation_time=self.stimulation_time,  # or your actual stimulation duration
+            baseline_exclude=30
+        )
+        print("90th percentile z-scored alpha power (channels Fp1, Fpz, Fp2):", perc90)
+        print("Highest value:", np.max(perc90))
+
         print("Analysis complete!")
 
     def _parse_log_file(self, log_path: str) -> dict[str, list]:
@@ -867,7 +907,7 @@ def main():
     port = "COM6"  # Windows example
 
     # Create headband interface
-    headband = ElemindHeadband(port, debug=True)
+    headband = ElemindHeadband(port, debug=False)
 
     # Configuration
     headband.enable_real_time_plotting = True  # Set to False for better performance
