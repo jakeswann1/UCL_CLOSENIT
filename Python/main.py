@@ -13,6 +13,7 @@ import re
 from collections import defaultdict
 from math import degrees
 import serial.tools.list_ports
+from post_hoc_analysis import analyze_alpha_power
 
 """
 Elemind Headband Python Interface with Closed-Loop Control
@@ -381,8 +382,6 @@ class ElemindHeadband:
         rtos_timestamp = int(match.group(1))
         data_type = match.group(2)
         values_str = match.group(3)
-
-        print(data)
 
         try:
             values = [float(x) for x in values_str.split()]
@@ -795,6 +794,18 @@ class ElemindHeadband:
             eeg, t, fs, N, idx_start, idx_end, parsed_data, raw_parsed_data, ts
         )
 
+        # Perform alpha power analysis
+        # eeg_array: shape (N, 4) [timestamp, ch1, ch2, ch3]
+        perc90, mean, std, stim_z = analyze_alpha_power(
+            eeg_array,
+            fs=250,
+            baseline_time=self.baseline_time,  # or your actual baseline duration
+            stimulation_time=self.stimulation_time,  # or your actual stimulation duration
+            baseline_exclude=30
+        )
+        print("90th percentile z-scored alpha power (channels Fp1, Fpz, Fp2):", perc90)
+        print("Highest value:", np.max(perc90))
+
         print("Analysis complete!")
 
     def _parse_log_file(self, log_path: str) -> dict[str, list]:
@@ -896,7 +907,7 @@ def main():
     port = "COM6"  # Windows example
 
     # Create headband interface
-    headband = ElemindHeadband(port, debug=True)
+    headband = ElemindHeadband(port, debug=False)
 
     # Configuration
     headband.enable_real_time_plotting = True  # Set to False for better performance
