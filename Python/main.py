@@ -15,6 +15,17 @@ from math import degrees
 import serial.tools.list_ports
 from post_hoc_analysis import analyze_alpha_power
 
+# --- GP-UCB controller imports ----------------------------------------
+from tv_gp_ucb import (
+    initialise_data,
+    build_model,
+    acquisition_func,
+    evaluate_information,
+    replace_next_value,
+    uniform_time_increase,
+    TestData,
+)
+
 """
 Elemind Headband Python Interface with Closed-Loop Control
 
@@ -188,6 +199,23 @@ class ElemindHeadband:
         self.pink_noise_active = False  # Track if pink noise is currently playing
         self.phase_trigger_count = 0  # Count how many times phase trigger occurred
 
+
+        # controller init
+        # ---------- GP-UCB controller state ----------
+        self._controller_cfg = {
+            "remember_n_stims": 20,
+            "res_phase": 61,
+            "phase_min": 0.0,
+            "phase_max": 2 * np.pi,
+            "decay_constant": 0.9,
+            "acquisition_k": 0.2,
+            "noise_sd": 0.0,
+        }
+        self._controller_beta = 1.0
+        self._controller_retained: TestData | None = None
+        self._controller_ready = False
+        self._last_next_stim = None  # keeps previous acquisition output
+
     def _setup_filters(self):
         """Initialize digital filters"""
         # High-pass filter (0.5 Hz) - 2nd order
@@ -217,6 +245,91 @@ class ElemindHeadband:
         if self.debug_mode:
             print("Filters initialized:")
             print(f"HPF: {self.hpf_on}, BPF: {self.bpf_on}, BSF: {self.bsf_on}")
+
+    # ======================================================================
+    # GP-UCB CONTROLLER
+    # ======================================================================
+
+    def _controller_initialise(self) -> None:
+        """Run once: seed the rolling data window and choose the first phase."""
+        if self._controller_ready:
+            return
+
+        cfg = self._controller_cfg
+
+        # Seed inputs uniformly and set their outputs to the current alpha value
+        self._controller_retained = initialise_data(
+            cfg["remember_n_stims"],
+            cfg["phase_min"],
+            cfg["phase_max"],
+            cfg["noise_sd"],
+            test_variables=np.zeros(4),
+            rng=np.random.default_rng(seed=int(time.time())),
+        )
+        self._controller_retained.output_samples[:] = self.avg_alpha_amp_last_sec
+
+        # Fit model and pick first stimulation phase
+        model = build_model(
+            self._controller_retained,
+            cfg["res_phase"],
+            cfg["phase_min"],
+            cfg["phase_max"],
+        )
+        self._last_next_stim = acquisition_func(model, self._controller_beta)
+        self.target_phase_rad = [float(self._last_next_stim.stim_variable[0])]
+        self._controller_ready = True
+
+        if self.debug_mode:
+            print(f"[Controller] Started, first phase = {self.target_phase_rad[0]:.2f} rad")
+
+
+    def _controller_iterate(self) -> None:
+        """Call once every second after avg_alpha_amp_last_sec is updated."""
+        if not self._controller_ready:
+            self._controller_initialise()
+            return
+
+        cfg = self._controller_cfg
+        measurement = self.avg_alpha_amp_last_sec
+
+        # ----- β update ----------------------------------------------------
+        self._controller_beta = evaluate_information(
+            self._last_next_stim.expected_sig,
+            self._last_next_stim.expected_mew,
+            measurement,
+            cfg["decay_constant"],
+            cfg["acquisition_k"],
+        )
+
+        # ----- overwrite one sample in the rolling window -----------------
+        idx = replace_next_value(self._controller_retained, self._last_next_stim)
+
+        # Age records by 1 s, insert latest observation
+        self._controller_retained = uniform_time_increase(self._controller_retained, 1.0)
+        self._controller_retained.inputs_samples[idx] = self._last_next_stim.stim_variable
+        self._controller_retained.output_samples[idx] = measurement
+        self._controller_retained.time[idx] = 0.0
+
+        # ----- model + acquisition ----------------------------------------
+        model = build_model(
+            self._controller_retained,
+            cfg["res_phase"],
+            cfg["phase_min"],
+            cfg["phase_max"],
+        )
+        self._last_next_stim = acquisition_func(model, self._controller_beta)
+
+        # Update target phase used by the existing phase-trigger routine
+        self.target_phase_rad = [float(self._last_next_stim.stim_variable[0])]
+
+        if self.debug_mode:
+            print(
+                f"[Controller] New phase = {self.target_phase_rad[0]:.2f} rad   "
+                f"β = {self._controller_beta:4.2f}"
+            )
+    # ======================================================================
+    # End GP-UCB CONTROLLER
+    # ======================================================================
 
     def connect(self) -> bool:
         """Connect to Elemind headband"""
@@ -502,6 +615,8 @@ class ElemindHeadband:
 
                 if self.debug_mode:
                     print(f"1-s avg α-amp: {self.avg_alpha_amp_last_sec:.3e} V")
+                self._controller_iterate()
+                
 
     def _check_phase_trigger(self, phase_rad: float):
         """Check if phase meets target criteria and trigger pink noise accordingly"""
