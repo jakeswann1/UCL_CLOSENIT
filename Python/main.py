@@ -16,6 +16,7 @@ import argparse
 from typing import Optional, Dict, Any, Tuple
 from math import degrees, radians
 import serial.tools.list_ports
+from UCL_CLOSENIT.oscilltrack import OscillTrack
 
 """
 Elemind Headband Python Interface with Closed-Loop Control
@@ -171,15 +172,6 @@ class ElemindHeadband:
         # New buffers for amplitude and phase
         self.inst_amp_buffer = np.zeros(1000)  # Last 4 seconds of amplitude
         self.inst_phase_buffer = np.zeros(1000)  # Last 4 seconds of phase
-
-        # Closed-loop control parameters
-        self.target_phase_rad = [np.pi/3, 5*np.pi/6, 4*np.pi/3, 11*np.pi/6]  # Target phase value (modify as needed)
-        self.phase_tolerance = 0.1  # Tolerance around target phase (radians)
-        self.pink_noise_volume = 0.5  # Pink noise volume (0.0 to 1.0)
-        self.pink_noise_fade_in_ms = 100  # Fade in time in milliseconds
-        self.pink_noise_fade_out_ms = 100  # Fade out time in milliseconds
-        self.pink_noise_active = False  # Track if pink noise is currently playing
-        self.phase_trigger_count = 0  # Count how many times phase trigger occurred
 
     def _setup_filters(self):
         """Initialize digital filters"""
@@ -401,6 +393,7 @@ class ElemindHeadband:
             if self.debug_mode:
                 print(f"Error processing data: {e}")
 
+
     def _process_eeg_sample(self, timestamp: float, eeg_raw: np.ndarray):
         if len(eeg_raw) != 3:
             return
@@ -434,6 +427,14 @@ class ElemindHeadband:
             self._update_plotting_buffers(eeg_filtered)
 
         # START YOUR CLOSED LOOP CONTROL HERE TODO: add
+        
+        self.tracker
+        phase_est, amp_est = self.tracker.step(sample)
+        self.inst_amp_buffer[:-1]   = self.inst_amp_buffer[1:]
+        self.inst_amp_buffer[-1]    = amp_est
+        self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
+        self.inst_phase_buffer[-1]  = phase_est % (2*np.pi)  # keep 0‒2π
+
 
         # END YOUR CLOSED LOOP CONTROL HERE
 
@@ -456,10 +457,10 @@ class ElemindHeadband:
             self._check_phase_trigger(phase_rad)
 
             # Update live buffers
-            self.inst_amp_buffer[:-1] = self.inst_amp_buffer[1:]
-            self.inst_amp_buffer[-1] = amp_volts
-            self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
-            self.inst_phase_buffer[-1] = phase_rad % (2 * np.pi)  # Ensure 0-2pi
+            # self.inst_amp_buffer[:-1] = self.inst_amp_buffer[1:]
+            # self.inst_amp_buffer[-1] = amp_volts
+            # self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
+            # self.inst_phase_buffer[-1] = phase_rad % (2 * np.pi)  # Ensure 0-2pi
 
     def _check_phase_trigger(self, phase_rad: float):
         """Check if phase meets target criteria and trigger pink noise accordingly"""
