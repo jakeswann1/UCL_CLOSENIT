@@ -171,13 +171,16 @@ class ElemindHeadband:
         self.inst_amp_buffer = np.zeros(1000)  # Last 4 seconds of amplitude
         self.inst_phase_buffer = np.zeros(1000)  # Last 4 seconds of phase
 
+        # Buffer for rolling 1s average alpha amplitude (last 4 seconds)
+        self.avg_alpha_amp_buffer = np.zeros(1000)
+
         # ----- rolling average of alpha-band amplitude -----
-        self.avg_alpha_amp_last_sec = 0.0        # most-recent 1-s mean
-        self.alpha_amp_history = []              # (timestamp, mean) log
-        self._amp_sample_counter = 0             # counts samples since last update
+        self.avg_alpha_amp_last_sec = 0.0  # most-recent 1-s mean
+        self.alpha_amp_history = []  # (timestamp, mean) log
+        self._amp_sample_counter = 0  # counts samples since last update
 
         # Closed-loop control parameters
-        self.target_phase_rad = 0 #[np.pi/3, 5*np.pi/6, 4*np.pi/3, 11*np.pi/6]  # Target phase value (modify by James Bayes Optimisation)
+        self.target_phase_rad = 0  # [np.pi/3, 5*np.pi/6, 4*np.pi/3, 11*np.pi/6]  # Target phase value (modify by James Bayes Optimisation)
         self.phase_tolerance = 0.1  # Tolerance around target phase (radians)
         self.pink_noise_volume = 0.5  # Pink noise volume (0.0 to 1.0)
         self.pink_noise_fade_in_ms = 100  # Fade in time in milliseconds
@@ -470,15 +473,29 @@ class ElemindHeadband:
             self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
             self.inst_phase_buffer[-1] = phase_rad % (2 * np.pi)  # Ensure 0-2pi
 
+            # Compute rolling 1s average for the last 250 samples at every sample
+            if self.sample_count >= self.fs:
+                rolling_avg = float(np.mean(np.abs(self.inst_amp_buffer[-self.fs :])))
+                self.avg_alpha_amp_buffer[:-1] = self.avg_alpha_amp_buffer[1:]
+                self.avg_alpha_amp_buffer[-1] = rolling_avg
+            else:
+                # Not enough samples yet, keep as zero or partial mean
+                self.avg_alpha_amp_buffer[:-1] = self.avg_alpha_amp_buffer[1:]
+                self.avg_alpha_amp_buffer[-1] = 0.0
+
             # ----- maintain one-second average -----
             self._amp_sample_counter += 1
 
-            if self._amp_sample_counter >= self.fs:            # 250 samples ≈ 1 s
-                last_sec_amp = self.inst_amp_buffer[-self.fs:]  # most-recent second
+            if self._amp_sample_counter >= self.fs:  # 250 samples ≈ 1 s
+                last_sec_amp = self.inst_amp_buffer[-self.fs :]  # most-recent second
                 self.avg_alpha_amp_last_sec = float(np.mean(np.abs(last_sec_amp)))
 
                 # save to history for later inspection
                 self.alpha_amp_history.append((timestamp, self.avg_alpha_amp_last_sec))
+
+                # update rolling buffer for plotting
+                self.avg_alpha_amp_buffer[:-1] = self.avg_alpha_amp_buffer[1:]
+                self.avg_alpha_amp_buffer[-1] = self.avg_alpha_amp_last_sec
 
                 # reset for the next second
                 self._amp_sample_counter = 0
@@ -606,12 +623,21 @@ class ElemindHeadband:
                 ax_amp.set_title("Instantaneous Amplitude")
                 ax_amp.set_ylabel("Amplitude (V)")
                 ax_amp.grid(True)
-                lines_amp = []
-                (line_amp,) = ax_amp.plot(x_samples, np.zeros(1000), color="purple")
-                lines_amp.append(line_amp)
-                (line_avg_amp,) = ax_phase.plot(x_samples, np.zeros(1000), linestyle="--", linewidth=1)
-                lines_amp.append(line_avg_amp)
-                ax_phase.legend(["α-amp", "Avg α-amp (rescaled)"])
+                (line_amp,) = ax_amp.plot(
+                    x_samples,
+                    np.zeros(1000),
+                    color="purple",
+                    label="Instantaneous α-amp",
+                )
+                (line_alpha_avg,) = ax_amp.plot(
+                    x_samples,
+                    np.zeros(1000),
+                    color="blue",
+                    linestyle="--",
+                    linewidth=1,
+                    label="Rolling 1s avg α-amp",
+                )
+                ax_amp.legend()
 
                 # Phase subplot
                 ax_phase = axs[2]
@@ -665,11 +691,10 @@ class ElemindHeadband:
                             lines_eeg[i].set_xdata(time_ax)
 
                         # Amplitude
-                        lines_amp[0].set_ydata(self.inst_amp_buffer)
-                        lines_amp[0].set_xdata(time_ax)
-                        lines_amp[1].set_ydata(self.avg_alpha_amp_last_sec)
-                        lines_amp[1].set_xdata(time_ax)
-
+                        line_amp.set_ydata(self.inst_amp_buffer)
+                        line_amp.set_xdata(time_ax)
+                        line_alpha_avg.set_ydata(self.avg_alpha_amp_buffer)
+                        line_alpha_avg.set_xdata(time_ax)
 
                         # Phase
                         line_phase.set_ydata(self.inst_phase_buffer)
@@ -687,7 +712,6 @@ class ElemindHeadband:
                         ax_eeg.autoscale_view(scalex=False, scaley=True)
                         ax_amp.relim()
                         ax_amp.autoscale_view(scalex=False, scaley=True)
-                        # ax_phase: y-limits fixed to [0, 2pi]
 
                         fig.canvas.draw_idle()
                         fig.canvas.flush_events()
@@ -801,7 +825,7 @@ class ElemindHeadband:
             fs=250,
             baseline_time=self.baseline_time,  # or your actual baseline duration
             stimulation_time=self.stimulation_time,  # or your actual stimulation duration
-            baseline_exclude=30
+            baseline_exclude=30,
         )
         print("90th percentile z-scored alpha power (channels Fp1, Fpz, Fp2):", perc90)
         print("Highest value:", np.max(perc90))
