@@ -2,3 +2,4 @@ MATLAB/*.txt
 MATLAB/*.asv
 Python/__pycache__
 ./*.txt
+*.txt
