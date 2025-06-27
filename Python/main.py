@@ -221,6 +221,14 @@ class ElemindHeadband:
         self.amp_est = [0]
         self.phase_est = [0]
 
+        # New buffers for tracking events in the phase plot
+        self.pink_noise_events = []  # List of (timestamp, event_type) where event_type is 'start' or 'stop'
+        self.target_phase_updates = []  # List of (timestamp, phase_value) for target phase changes
+        self.target_phase_buffer = np.full(1000, np.nan)  # Buffer for plotting target phase over time
+        
+        # Track the current target phase for comparison
+        self._last_target_phase = None
+
     def _setup_filters(self):
         """Initialize digital filters"""
         # High-pass filter (0.5 Hz) - 2nd order
@@ -330,7 +338,18 @@ class ElemindHeadband:
         self._last_next_stim = acquisition_func(model, self._controller_beta)
 
         # Update target phase used by the existing phase-trigger routine
-        self.target_phase_rad = [float(self._last_next_stim.stim_variable[0])]
+        new_target_phase = float(self._last_next_stim.stim_variable[0])
+        
+        # Check if target phase has changed
+        if self._last_target_phase is None or abs(new_target_phase - self._last_target_phase) > 0.01:
+            current_time = self.sample_count * self.ts
+            self.target_phase_updates.append((current_time, new_target_phase))
+            self._last_target_phase = new_target_phase
+            
+            if self.debug_mode:
+                print(f"[Controller] Target phase updated to {new_target_phase:.2f} rad at {current_time:.1f}s")
+        
+        self.target_phase_rad = [new_target_phase]
 
         if self.debug_mode:
             print(f"Target phase: {self.target_phase_rad}")
@@ -441,7 +460,7 @@ class ElemindHeadband:
         # self.send_command(f"audio_pink_fade_out {self.pink_noise_fade_out_ms}", False)
         # self.send_command("audio_pink_unmute", False)
         self.send_command("audio_pink_volume 1.0", False)  # Start muted
-        self.send_command(f"audio_pink_fade_in 0", False)
+        self.send_command("audio_pink_fade_in 0", False)
         self.send_command("audio_pink_play", False)
 
         self._stop_pink_noise()  # Ensure pink noise is stopped initially
@@ -595,6 +614,17 @@ class ElemindHeadband:
 
         self.sample_count += 1
 
+    def _update_target_phase_buffer(self):
+        """Update the target phase buffer for real-time plotting"""
+        # Shift buffer
+        self.target_phase_buffer[:-1] = self.target_phase_buffer[1:]
+        
+        # Set the new value based on current target phase
+        if len(self.target_phase_rad) > 0:
+            self.target_phase_buffer[-1] = self.target_phase_rad[0]
+        else:
+            self.target_phase_buffer[-1] = np.nan
+
     def _process_inst_amp_phs(self, timestamp: float, inst_data: np.ndarray):
         if len(inst_data) >= 2:
             # amp_volts = inst_data[0] * self.eeg_adc2volts
@@ -603,6 +633,7 @@ class ElemindHeadband:
             amp_volts  = self.amp_est
             phase_rad = self.phase_est
             # phase_est, amp_est = self.tracker.step()
+
 
             self.inst_amp_phs_data.append([timestamp, amp_volts, phase_rad])
 
@@ -617,6 +648,9 @@ class ElemindHeadband:
             # self.inst_amp_buffer[-1] = amp_volts
             # self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
             # self.inst_phase_buffer[-1] = phase_rad % (2 * np.pi)  # Ensure 0-2pi
+
+            # Update target phase buffer for plotting
+            self._update_target_phase_buffer()
 
             # Compute rolling 1s average for the last 250 samples at every sample
             if self.sample_count >= self.fs:
@@ -693,6 +727,11 @@ class ElemindHeadband:
         try:
             self.send_command(f"audio_pink_volume {self.pink_noise_volume}", False)
             self.send_command("audio_pink_play")
+            
+            # Record the start event with current sample timestamp
+            current_time = self.sample_count * self.ts
+            self.pink_noise_events.append((current_time, 'start'))
+            
             if self.debug_mode:
                 print("Pink noise volume set to ON")
         except Exception as e:
@@ -704,7 +743,11 @@ class ElemindHeadband:
         try:
             self.send_command("audio_pink_volume 0", False)
             self.send_command("audio_pink_play")
-
+            
+            # Record the stop event with current sample timestamp
+            current_time = self.sample_count * self.ts
+            self.pink_noise_events.append((current_time, 'stop'))
+            
             if self.debug_mode:
                 print("Pink noise volume set to OFF")
         except Exception as e:
@@ -781,14 +824,33 @@ class ElemindHeadband:
                 )
                 ax_amp.legend()
 
-                # Phase subplot
+                # Enhanced Phase subplot with pink noise events and target phase
                 ax_phase = axs[2]
-                ax_phase.set_title("Instantaneous Phase")
+                ax_phase.set_title("Instantaneous Phase with Events")
                 ax_phase.set_ylabel("Phase (rad)")
                 ax_phase.set_xlabel("Time (s)")
                 ax_phase.set_ylim([0, 2 * np.pi])
                 ax_phase.grid(True)
-                (line_phase,) = ax_phase.plot(x_samples, np.zeros(1000), color="orange")
+                
+                # Phase line
+                (line_phase,) = ax_phase.plot(x_samples, np.zeros(1000), color="orange", label="Instantaneous phase")
+                
+                # Target phase line
+                (line_target_phase,) = ax_phase.plot(
+                    x_samples, 
+                    np.full(1000, np.nan), 
+                    color="black", 
+                    linestyle="-", 
+                    linewidth=2, 
+                    label="Target phase"
+                )
+                
+                # Initialize empty lists for event lines (will be updated dynamically)
+                pink_noise_start_lines = []
+                pink_noise_stop_lines = []
+                target_phase_points = []
+                
+                ax_phase.legend()
 
                 plt.tight_layout()
                 plt.show(block=False)
@@ -841,6 +903,10 @@ class ElemindHeadband:
                         # Phase
                         line_phase.set_ydata(self.inst_phase_buffer)
                         line_phase.set_xdata(time_ax)
+                        
+                        # Target phase
+                        line_target_phase.set_ydata(self.target_phase_buffer)
+                        line_target_phase.set_xdata(time_ax)
 
                         # Set x-axis limits to scroll with data
                         xmin = time_ax[0]
@@ -848,6 +914,83 @@ class ElemindHeadband:
                         ax_eeg.set_xlim([xmin, xmax])
                         ax_amp.set_xlim([xmin, xmax])
                         ax_phase.set_xlim([xmin, xmax])
+
+                        # Clear old event lines that are outside the current window
+                        for line in pink_noise_start_lines[:]:
+                            if line.get_xdata()[0] < xmin:
+                                line.remove()
+                                pink_noise_start_lines.remove(line)
+                        
+                        for line in pink_noise_stop_lines[:]:
+                            if line.get_xdata()[0] < xmin:
+                                line.remove()
+                                pink_noise_stop_lines.remove(line)
+                                
+                        for point in target_phase_points[:]:
+                            if point.get_offsets()[0][0] < xmin:
+                                point.remove()
+                                target_phase_points.remove(point)
+
+                        # Add new pink noise event lines within the current window
+                        for event_time, event_type in self.pink_noise_events:
+                            if xmin <= event_time <= xmax:
+                                # Check if we already have a line for this event
+                                line_exists = False
+                                existing_lines = pink_noise_start_lines if event_type == 'start' else pink_noise_stop_lines
+                                for existing_line in existing_lines:
+                                    if abs(existing_line.get_xdata()[0] - event_time) < 0.001:  # Small tolerance
+                                        line_exists = True
+                                        break
+                                
+                                if not line_exists:
+                                    if event_type == 'start':
+                                        line = ax_phase.axvline(
+                                            x=event_time, 
+                                            color='red', 
+                                            linestyle='--', 
+                                            alpha=0.7, 
+                                            linewidth=1,
+                                            label='Pink noise ON' if not pink_noise_start_lines else ""
+                                        )
+                                        pink_noise_start_lines.append(line)
+                                    elif event_type == 'stop':
+                                        line = ax_phase.axvline(
+                                            x=event_time, 
+                                            color='blue', 
+                                            linestyle='--', 
+                                            alpha=0.7, 
+                                            linewidth=1,
+                                            label='Pink noise OFF' if not pink_noise_stop_lines else ""
+                                        )
+                                        pink_noise_stop_lines.append(line)
+
+                        # Add new target phase update points within the current window
+                        for update_time, phase_value in self.target_phase_updates:
+                            if xmin <= update_time <= xmax:
+                                # Check if we already have a point for this update
+                                point_exists = False
+                                for existing_point in target_phase_points:
+                                    if abs(existing_point.get_offsets()[0][0] - update_time) < 0.001:
+                                        point_exists = True
+                                        break
+                                
+                                if not point_exists:
+                                    point = ax_phase.scatter(
+                                        update_time, 
+                                        phase_value, 
+                                        color='black', 
+                                        marker='o', 
+                                        s=30, 
+                                        alpha=0.8,
+                                        label='Target phase update' if not target_phase_points else ""
+                                    )
+                                    target_phase_points.append(point)
+
+                        # Update legend if new elements were added
+                        if (pink_noise_start_lines and not any('Pink noise ON' in str(h.get_label()) for h in ax_phase.get_legend().get_texts())) or \
+                        (pink_noise_stop_lines and not any('Pink noise OFF' in str(h.get_label()) for h in ax_phase.get_legend().get_texts())) or \
+                        (target_phase_points and not any('Target phase update' in str(h.get_label()) for h in ax_phase.get_legend().get_texts())):
+                            ax_phase.legend()
 
                         # Auto-scale y-axes only occasionally
                         ax_eeg.relim()
@@ -967,7 +1110,7 @@ class ElemindHeadband:
             fs=250,
             baseline_time=self.baseline_time,
             stimulation_time=self.stimulation_time,
-            baseline_exclude=self.baseline_time/2,
+            baseline_exclude=self.baseline_time / 2,
         )
         print("90th percentile z-scored alpha power (channels Fp1, Fpz, Fp2):", perc90)
         print("Highest value:", np.max(perc90))
@@ -1056,6 +1199,7 @@ def main():
 
     # Recording parameters
     eeg_baseline = 60  # Baseline before stimulation starts
+
     stimulation_time = 2 * 60  # Time for which stimulation is active
     sampling_duration_secs = stimulation_time + eeg_baseline  # total recording time
 
