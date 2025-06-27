@@ -14,6 +14,7 @@ from collections import defaultdict
 from math import degrees
 import serial.tools.list_ports
 from post_hoc_analysis import analyze_alpha_power
+from oscilltrack import OscillTrack
 
 # --- GP-UCB controller imports ----------------------------------------
 from tv_gp_ucb import (
@@ -214,6 +215,11 @@ class ElemindHeadband:
         self._controller_retained: TestData | None = None
         self._controller_ready = False
         self._last_next_stim = None  # keeps previous acquisition output
+
+        #osciltrack
+        self.tracker = OscillTrack(fc_hz=10.0, fs_hz=250, g=2 ** -4)
+        self.amp_est = [0]
+        self.phase_est = [0]
 
         # New buffers for tracking events in the phase plot
         self.pink_noise_events = []  # List of (timestamp, event_type) where event_type is 'start' or 'stop'
@@ -592,11 +598,12 @@ class ElemindHeadband:
         # START YOUR CLOSED LOOP CONTROL HERE TODO: add
 
         # self.tracker
-        # phase_est, amp_est = self.tracker.step(sample)
-        # self.inst_amp_buffer[:-1]   = self.inst_amp_buffer[1:]
-        # self.inst_amp_buffer[-1]    = amp_est
-        # self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
-        # self.inst_phase_buffer[-1]  = phase_est % (2*np.pi)  # keep 0‒2π
+        self.phase_est, self.amp_est = self.tracker.step(sample)
+        self.inst_amp_buffer[:-1]   = self.inst_amp_buffer[1:]
+        self.inst_amp_buffer[-1]    = self.amp_est
+        self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
+        self.inst_phase_buffer[-1]  = self.phase_est % (2*np.pi)
+        
 
         # END YOUR CLOSED LOOP CONTROL HERE
 
@@ -620,20 +627,28 @@ class ElemindHeadband:
 
     def _process_inst_amp_phs(self, timestamp: float, inst_data: np.ndarray):
         if len(inst_data) >= 2:
-            amp_volts = inst_data[0] * self.eeg_adc2volts
-            phase_rad = inst_data[1] if len(inst_data) > 1 else 0.0
+            # amp_volts = inst_data[0] * self.eeg_adc2volts
+            # # phase_rad = radians(inst_data[1]) if len(inst_data) > 1 else 0.0
+            # phase_rad = inst_data[1] if len(inst_data) > 1 else 0.0
+            amp_volts  = self.amp_est
+            phase_rad = self.phase_est
+            # phase_est, amp_est = self.tracker.step()
+
 
             self.inst_amp_phs_data.append([timestamp, amp_volts, phase_rad])
 
             # CLOSED LOOP CONTROL: Trigger pink noise based on phase
             self._check_phase_trigger(phase_rad)
 
+              # keep 0‒2π    
+
+
             # Update live buffers
-            self.inst_amp_buffer[:-1] = self.inst_amp_buffer[1:]
-            self.inst_amp_buffer[-1] = amp_volts
-            self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
-            self.inst_phase_buffer[-1] = phase_rad % (2 * np.pi)  # Ensure 0-2pi
-            
+            # self.inst_amp_buffer[:-1] = self.inst_amp_buffer[1:]
+            # self.inst_amp_buffer[-1] = amp_volts
+            # self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
+            # self.inst_phase_buffer[-1] = phase_rad % (2 * np.pi)  # Ensure 0-2pi
+
             # Update target phase buffer for plotting
             self._update_target_phase_buffer()
 
@@ -1183,7 +1198,8 @@ def main():
     subject_num = 0  # CHANGE TO YOUR SUBJECT NUMBER
 
     # Recording parameters
-    eeg_baseline = 10  # Baseline before stimulation starts
+    eeg_baseline = 60  # Baseline before stimulation starts
+
     stimulation_time = 2 * 60  # Time for which stimulation is active
     sampling_duration_secs = stimulation_time + eeg_baseline  # total recording time
 
@@ -1199,7 +1215,7 @@ def main():
 
     # port = "/dev/ttyUSB0"  # Linux example
     # port = "/dev/tty.usbmodem14401"  # Mac example
-    port = "COM6"  # Windows example
+    port = "/dev/tty.usbmodem2101"  # Windows example
 
     # Create headband interface
     headband = ElemindHeadband(port, debug=True)
