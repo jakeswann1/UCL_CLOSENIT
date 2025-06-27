@@ -217,7 +217,11 @@ class ElemindHeadband:
         self._last_next_stim = None  # keeps previous acquisition output
 
         #osciltrack
-        self.tracker = OscillTrack(fc_hz=10.0, fs_hz=250, g=2 ** -4)
+        self.trackergain = 2e-4
+        self.trackerfreq = 10
+        self.tracker1 = OscillTrack(fc_hz=self.trackerfreq, fs_hz=250, g=self.trackergain)
+        self.tracker2 = OscillTrack(fc_hz=self.trackerfreq, fs_hz=250, g=self.trackergain)
+        self.tracker3 = OscillTrack(fc_hz=self.trackerfreq, fs_hz=250, g=self.trackergain)
         self.amp_est = [0]
         self.phase_est = [0]
 
@@ -579,7 +583,21 @@ class ElemindHeadband:
         # START YOUR CLOSED LOOP CONTROL HERE TODO: add
 
         # self.tracker
-        self.phase_est, self.amp_est = self.tracker.step(sample)
+        phase_est_local = []
+        amp_est_local = []
+        # phase_est_temp, amp_est_temp = self.tracker1.step(sample)
+        # phase_est_local.append(phase_est_temp)
+        # amp_est_local.append(amp_est_temp)
+        # phase_est_temp, amp_est_temp = self.tracker2.step(sample)
+        # phase_est_local.append(phase_est_temp)
+        # amp_est_local.append(amp_est_temp)
+        phase_est_temp, amp_est_temp = self.tracker3.step(sample)
+        phase_est_local.append(phase_est_temp)
+        amp_est_local.append(amp_est_temp)
+
+        self.phase_est  = np.mean(phase_est_local)
+        self.amp_est = np.mean(amp_est_local)
+
         self.inst_amp_buffer[:-1]   = self.inst_amp_buffer[1:]
         self.inst_amp_buffer[-1]    = self.amp_est
         self.inst_phase_buffer[:-1] = self.inst_phase_buffer[1:]
@@ -1072,7 +1090,7 @@ def main():
 
     # port = "/dev/ttyUSB0"  # Linux example
     # port = "/dev/tty.usbmodem14401"  # Mac example
-    port = "/dev/tty.usbmodem2101"  # Windows example
+    port = "/dev/tty.usbmodem1101"  # Windows example
 
     # Create headband interface
     headband = ElemindHeadband(port, debug=True)
