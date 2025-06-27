@@ -46,6 +46,8 @@ class OscillTrack:
 
         # Phase (CORDIC in hardware; arctan2 here)  --------------------
         phase = np.arctan2(r_imag, r_real)  # φ_n in paper
+        if phase < 0:
+            phase += 2 * np.pi
         amplitude = np.hypot(self.a, self.b)
 
         # Advance reference phase
