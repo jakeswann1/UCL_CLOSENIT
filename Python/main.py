@@ -685,42 +685,101 @@ class ElemindHeadband:
                 if self.sample_count >= self.baseline_time * self.fs:
                     self._controller_iterate()
 
+    # def _check_phase_trigger(self, phase_rad: float):
+    #     """Check if phase meets target criteria and trigger pink noise accordingly"""
+    #     # Block pink noise during baseline
+    #     if self.sample_count < self.baseline_time * self.fs:
+    #         return
+    #     # Use configurable parameters from __init__
+    #     target_phase = self.target_phase_rad
+    #     phase_tolerance = self.phase_tolerance
+
+    #     # Check if phase is within target range
+    #     phase_diff = np.abs(phase_rad - np.array(target_phase))
+    #     phase_diff = np.where(phase_diff > np.pi, 2 * np.pi - phase_diff, phase_diff)
+    #     in_target_range = np.any(phase_diff <= phase_tolerance)
+
+    #     # Trigger logic
+    #     if in_target_range and not hasattr(self, "pink_noise_active"):
+    #         # Initialize pink noise state if not already done
+    #         self.pink_noise_active = False
+
+    #     if in_target_range and not self.pink_noise_active:
+    #         # Start pink noise
+    #         self._start_pink_noise()
+    #         self.pink_noise_active = True
+    #         self.phase_trigger_count += 1
+    #         if self.debug_mode:
+    #             target_phase_str = ", ".join([f"{tp:.3f}" for tp in target_phase])
+    #             print(
+    #                 f"Phase trigger #{self.phase_trigger_count}: {phase_rad:.3f} rad (targets: [{target_phase_str}] ± {phase_tolerance:.3f})"
+    #             )
+
+    #     elif not in_target_range and self.pink_noise_active:
+    #         # Stop pink noise
+    #         self._stop_pink_noise()
+    #         self.pink_noise_active = False
+    #         if self.debug_mode:
+    #             print(f"Phase exit: {phase_rad:.3f} rad")
+
+
     def _check_phase_trigger(self, phase_rad: float):
-        """Check if phase meets target criteria and trigger pink noise accordingly"""
-        # Block pink noise during baseline
+        """
+        Trigger pink noise when the phase climbs past any target phase
+        (strict upward crossing).  Hold the noise on for 50 ms.
+        """
+
+        # Skip the baseline period
         if self.sample_count < self.baseline_time * self.fs:
+            self.last_phase = phase_rad
             return
-        # Use configurable parameters from __init__
-        target_phase = self.target_phase_rad
-        phase_tolerance = self.phase_tolerance
 
-        # Check if phase is within target range
-        phase_diff = np.abs(phase_rad - np.array(target_phase))
-        phase_diff = np.where(phase_diff > np.pi, 2 * np.pi - phase_diff, phase_diff)
-        in_target_range = np.any(phase_diff <= phase_tolerance)
-
-        # Trigger logic
-        if in_target_range and not hasattr(self, "pink_noise_active"):
-            # Initialize pink noise state if not already done
+        # One-off initialisation
+        if not hasattr(self, "last_phase"):
+            self.last_phase = phase_rad
+        if not hasattr(self, "hold_counter"):
+            self.hold_counter = 0
             self.pink_noise_active = False
 
-        if in_target_range and not self.pink_noise_active:
-            # Start pink noise
+        prev_phase = self.last_phase
+        curr_phase = phase_rad
+
+        # Unwrap so we can tell genuine upward motion even across the 2π→0 wrap
+        # if curr_phase < prev_phase:
+        #     curr_phase += 2 * np.pi
+
+        crossing_detected = False
+        for tp in np.atleast_1d(self.target_phase_rad):
+            tp_unwrapped = tp
+            if tp < prev_phase:          # bring target into the same ‘lap’
+                tp_unwrapped += 2 * np.pi
+            # crossed if target now lies between prev and current values
+            if prev_phase < tp_unwrapped <= curr_phase:
+                crossing_detected = True
+                break
+
+        # Store current phase for next call
+        self.last_phase = phase_rad
+
+        # 50 ms hold
+        n_sample_hold = int(round(0.05 * self.fs))
+
+        if crossing_detected:
             self._start_pink_noise()
             self.pink_noise_active = True
+            self.hold_counter = n_sample_hold
             self.phase_trigger_count += 1
             if self.debug_mode:
-                target_phase_str = ", ".join([f"{tp:.3f}" for tp in target_phase])
-                print(
-                    f"Phase trigger #{self.phase_trigger_count}: {phase_rad:.3f} rad (targets: [{target_phase_str}] ± {phase_tolerance:.3f})"
-                )
+                print(f"Phase trigger #{self.phase_trigger_count}: {phase_rad:.3f} rad")
 
-        elif not in_target_range and self.pink_noise_active:
-            # Stop pink noise
-            self._stop_pink_noise()
-            self.pink_noise_active = False
-            if self.debug_mode:
-                print(f"Phase exit: {phase_rad:.3f} rad")
+        # Keep noise on for the required number of samples
+        if self.pink_noise_active:
+            self.hold_counter -= 1
+            if self.hold_counter <= 0:
+                self._stop_pink_noise()
+                self.pink_noise_active = False
+                if self.debug_mode:
+                    print("Pink noise stopped")
 
     def _start_pink_noise(self):
         """Set pink noise volume to desired level (start noise)."""
