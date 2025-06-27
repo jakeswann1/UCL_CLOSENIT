@@ -449,8 +449,8 @@ class ElemindHeadband:
         time.sleep(1)
         self.send_command("audio_stop_test")
         print("Audio test complete.")
-        self.send_command("audio_bgwav_play /audio/RAIN_22M.wav 1")
-        self.send_command("audio_bg_volume 0.2")
+        # self.send_command("audio_bgwav_play /audio/RAIN_22M.wav 1")
+        # self.send_command("audio_bg_volume 0.2")
         
 
         # Setup pink noise for session
@@ -803,7 +803,12 @@ class ElemindHeadband:
     def _stop_pink_noise(self):
         """Set pink noise volume to zero (stop noise)."""
         try:
-            self.send_command("audio_pink_volume 0.3", False)
+            if self.sample_count >= self.baseline_time * self.fs:
+                self.send_command("audio_pink_volume 0.3", False)
+            else:
+                self.send_command("audio_pink_volume 0.0", False)
+
+            
             self.send_command("audio_pink_play")
             
             # Record the stop event with current sample timestamp
