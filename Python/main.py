@@ -1198,7 +1198,7 @@ def main():
     subject_num = 0  # CHANGE TO YOUR SUBJECT NUMBER
 
     # Recording parameters
-    eeg_baseline = 60  # Baseline before stimulation starts
+    eeg_baseline = 1  # Baseline before stimulation starts
 
     stimulation_time = 2 * 60  # Time for which stimulation is active
     sampling_duration_secs = stimulation_time + eeg_baseline  # total recording time
