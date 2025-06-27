@@ -449,6 +449,9 @@ class ElemindHeadband:
         time.sleep(1)
         self.send_command("audio_stop_test")
         print("Audio test complete.")
+        self.send_command("audio_bgwav_play /audio/RAIN_22M.wav 1")
+        self.send_command("audio_bg_volume 0.2")
+        
 
         # Setup pink noise for session
         self.setup_pink_noise()
@@ -800,7 +803,7 @@ class ElemindHeadband:
     def _stop_pink_noise(self):
         """Set pink noise volume to zero (stop noise)."""
         try:
-            self.send_command("audio_pink_volume 0", False)
+            self.send_command("audio_pink_volume 0.3", False)
             self.send_command("audio_pink_play")
             
             # Record the stop event with current sample timestamp
@@ -1257,7 +1260,7 @@ def main():
     subject_num = 0  # CHANGE TO YOUR SUBJECT NUMBER
 
     # Recording parameters
-    eeg_baseline = 1  # Baseline before stimulation starts
+    eeg_baseline = 60  # Baseline before stimulation starts
 
     stimulation_time = 2 * 60  # Time for which stimulation is active
     sampling_duration_secs = stimulation_time + eeg_baseline  # total recording time
@@ -1274,7 +1277,7 @@ def main():
 
     # port = "/dev/ttyUSB0"  # Linux example
     # port = "/dev/tty.usbmodem14401"  # Mac example
-    port = "/dev/tty.usbmodem2101"  # Windows example
+    port = "/dev/tty.usbmodem101"  # Windows example
 
     # Create headband interface
     headband = ElemindHeadband(port, debug=True)
