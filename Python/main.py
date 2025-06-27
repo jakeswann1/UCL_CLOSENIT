@@ -1262,7 +1262,7 @@ class ElemindHeadband:
 
 def main():
     team_num = 2  # CHANGE TO YOUR TEAM NUMBER
-    subject_num = 0  # CHANGE TO YOUR SUBJECT NUMBER
+    subject_num = 1  # CHANGE TO YOUR SUBJECT NUMBER
 
     # Recording parameters
     eeg_baseline = 60  # Baseline before stimulation starts
@@ -1282,7 +1282,7 @@ def main():
 
     # port = "/dev/ttyUSB0"  # Linux example
     # port = "/dev/tty.usbmodem14401"  # Mac example
-    port = "/dev/tty.usbmodem101"  # Windows example
+    port = "/dev/tty.usbmodem1101"  # Windows example
 
     # Create headband interface
     headband = ElemindHeadband(port, debug=True)
